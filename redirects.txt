@@ -1,13 +1,22 @@
-// redirects.txt
-// Format:  <source-hostname> --> <target-hostname>
-// - Raw hostnames only (no https://, no paths, no queries)
-// - One redirect per line
+// Worker redirects — redirects.txt
+// See https://github.com/inds-space/Public_Router/blob/main/redirects.txt
+//
+// Comments can be written by starting with '//' just like in js
+// Two formats supported:
+//   source.hostname --> target.hostname
+//   source.hostname --> https://full.url/goes/here
+// "-->" reresents to or goes to
+// 
+// Sync rule: every source here needs a matching route in wrangler.toml
 
-// Apex to www
+
+// My Redirects (Production Examples - Internal) 
+
 inds.space --> www.inds.space
+my.dc.inds.space --> my.discord.inds.space
 
-// Legacy domain forwarding
-old.inds.space --> www.inds.space
 
-// Short link domain - keep until rebrand is complete
-go.inds.space --> www.inds.space
+// External redirects
+
+code.inds.space --> https://vscode.dev/tunnel/hacktheworld/
+my.discord.inds.space --> https://discord.com/users/1176951696048541827

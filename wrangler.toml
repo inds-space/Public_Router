@@ -1,19 +1,40 @@
+# Wrangler Configuration — wrangler.toml
+# See https://github.com/inds-space/Public_Router/blob/main/wrangler.toml
+# Comments can be written with '#'
+# Refer to https://developers.cloudflare.com/workers/wrangler/configuration/ for more details
+
+
 name = "router"
 main = "index.js"
 compatibility_date = "2024-09-23"
 workers_dev = false
+preview_urls = false
 
-# Custom domains — CF auto-issues SSL certs, no dummy DNS A records needed.
-# Add a new [[routes]] block (with custom_domain = true) for each source in redirects.txt.
+# Custom Domains — Cloudflare creates DNS records + certs automatically.
+# Certs will be issued for even domains like wooho.enjoy.free.unlimited.ssl.inds.space
+# Note that it may take ~15-30 minutes for SSL certs to be issued.
+# All pre-existing A/AAAA/CNAME records for these hostnames must be deleted first.
+
+# Syntax (per domain/subdomain):
+# [[routes]]
+# pattern = "yourdomain.tld"
+# custom_domain = true
+
+
+# My Custom Domains (Production examples)
 
 [[routes]]
 pattern = "inds.space"
 custom_domain = true
 
 [[routes]]
-pattern = "old.inds.space"
+pattern = "code.inds.space"
 custom_domain = true
 
 [[routes]]
-pattern = "go.inds.space"
+pattern = "my.dc.inds.space"
+custom_domain = true
+
+[[routes]]
+pattern = "my.discord.inds.space"
 custom_domain = true

@@ -19,11 +19,20 @@ export function handleRequest(request) {
   const url = new URL(request.url);
   const hostname = url.hostname.toLowerCase();
 
-  const target = REDIRECTS[hostname];
+  const entry = REDIRECTS[hostname];
 
-  if (target) {
-    const destination = `https://${target}${url.pathname}${url.search}`;
-    return Response.redirect(destination, 301);
+  if (entry) {
+    let destination;
+    if (entry.type === "url") {
+      // Full URL target — redirect to specified URL, append original query string if present
+      destination = url.search
+        ? `${entry.target}${entry.target.includes("?") ? "&" : "?"}${url.search.slice(1)}`
+        : entry.target;
+    } else {
+      // Hostname target — preserve original path + query, prepend https://
+      destination = `https://${entry.target}${url.pathname}${url.search}`;
+    }
+    return Response.redirect(destination, 308);
   }
 
   return new Response(notFoundHtml, {
