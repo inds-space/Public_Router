@@ -1,3 +1,11 @@
+# DO NOT USE THIS RN.
+
+### Its breaking under prod. I'm actively investigating this issue.
+Please bear with me. 
+
+Caused Downtime for ~1 minute
+[IND's Soace Status](https://status.inds.space/)
+
 # Router
 
 **Zero-latency domain redirects. No server. No maintenance. Just traffic going exactly where it should.**
