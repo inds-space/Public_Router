@@ -1,15 +1,19 @@
 name = "router"
 main = "index.js"
 compatibility_date = "2024-09-23"
+workers_dev = false
 
 # Custom domains — CF auto-issues SSL certs, no dummy DNS A records needed.
-# Add a new [[custom_domains]] block for each source in redirects.txt.
+# Add a new [[routes]] block (with custom_domain = true) for each source in redirects.txt.
 
-[[custom_domains]]
+[[routes]]
 pattern = "inds.space"
+custom_domain = true
 
-[[custom_domains]]
+[[routes]]
 pattern = "old.inds.space"
+custom_domain = true
 
-[[custom_domains]]
+[[routes]]
 pattern = "go.inds.space"
+custom_domain = true
