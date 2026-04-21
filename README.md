@@ -1,52 +1,37 @@
-# DO NOT USE THIS RN.
-
-### Its breaking under prod. I'm actively investigating this issue.
-Please bear with me. 
-
-Caused Downtime for ~1 minute
-[IND's Soace Status](https://status.inds.space/)
-
 # Router
 
-**Zero-latency domain redirects. No server. No maintenance. Just traffic going exactly where it should.**
+**Zero-latency hostname redirects at the Cloudflare edge.**
 
-Every domain you own is a liability if it's not working for you. Forgotten apex domains that don't forward. Legacy subdomains that 404. Short links that go nowhere. Router fixes all of that with a single config file and a Cloudflare Worker that runs in milliseconds at the edge — worldwide.
+Every domain you own is a liability if it's not pointed somewhere. Router fixes forgotten apex domains, legacy subdomains, and short links — all from a single plain-text config file deployed as a Cloudflare Worker. No server, no database, no framework.
 
-You manage redirects in plain text. Router handles the rest.
+Live on [inds.space](https://www.inds.space) — routing `inds.space`, `biz.inds.space`, `go.inds.space`, and more.
 
----
+## Features
 
-## Why Router
+- **One file.** Every redirect lives in `redirects.txt`. Add a line, deploy, done.
+- **Edge-native speed.** Runs as a Cloudflare Worker — responses come from the nearest PoP to your visitor, not a single-region server.
+- **Zero request-time overhead.** The redirect map is parsed once at Worker startup and cached in memory. Every request is a plain object lookup.
+- **Strict validation.** Invalid hostnames, duplicates, and malformed lines fail the deploy loudly before anything reaches production.
+- **Path and query string preserved.** `old.example.com/blog/post?ref=twitter` lands on `www.example.com/blog/post?ref=twitter`.
+- **Custom 404 fallback.** Unmatched hostnames get a clean error page instead of a raw Cloudflare screen.
+- **Six files. Zero dependencies.**
 
-- **One file to rule them all.** Every redirect lives in `redirects.txt`. Add a line, deploy, done. No dashboards, no UI, no databases.
-- **Edge-native speed.** Runs as a Cloudflare Worker. Responses come from the nearest edge node to your visitor — not a server in a single region.
-- **Zero cold-start overhead.** The redirect map is parsed once at Worker startup and cached in memory for the lifetime of the isolate. Every subsequent request is a plain object lookup.
-- **Bulletproof config parsing.** The parser validates every line, rejects duplicates, and throws hard on bad input — so your redirect config never silently breaks.
-- **Path and query preserved.** A visitor hitting `old.yourdomain.com/blog/post?ref=twitter` lands on `www.yourdomain.com/blog/post?ref=twitter`. Nothing gets lost.
-- **Clean 404 fallback.** Anything that doesn't match a redirect gets a polished custom error page, not a raw Cloudflare error screen.
-- **Six files. No framework. No nonsense.**
-
----
-
-## Project Structure
+## Project structure
 
 ```
 /
-├─ index.js        # Worker entrypoint — tiny by design
-├─ router.js       # Runtime logic: match hostname, redirect or 404
-├─ parser.js       # Strict redirects.txt parser
-├─ redirects.txt   # Your redirect config — the only file you edit day-to-day
-├─ 404.html        # Custom not-found page
-└─ wrangler.toml   # Cloudflare Worker deployment config
+├── index.js        # Worker entrypoint
+├── router.js       # Request handling: hostname lookup, redirect or 404
+├── parser.js       # Strict parser for redirects.txt
+├── redirects.txt   # Your redirect config — the only file you touch day-to-day
+├── 404.html        # Custom not-found page
+└── wrangler.toml   # Cloudflare Worker deployment config
 ```
 
----
+## Prerequisites
 
-## Quick Start
-
-### 1. Prerequisites
-
-- [Node.js](https://nodejs.org/) (for Wrangler)
+- A [Cloudflare account](https://dash.cloudflare.com/sign-up) with at least one domain added and proxied
+- [Node.js](https://nodejs.org/) v18+
 - [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/) installed and authenticated
 
 ```bash
@@ -54,21 +39,35 @@ npm install -g wrangler
 wrangler login
 ```
 
-### 2. Configure your redirects
+## Quick start
 
-Open `redirects.txt` and add your redirects:
+### 1. Clone the repo
+
+```bash
+git clone https://github.com/your-username/router.git
+cd router
+```
+
+### 2. Add your redirects
+
+Edit `redirects.txt`:
 
 ```
-inds.space --> www.inds.space
-old.inds.space --> www.inds.space
-go.inds.space --> www.inds.space
+// Apex to www
+example.com --> www.example.com
+
+// Legacy subdomain
+old.example.com --> www.example.com
+
+// Short link domain
+go.example.com --> www.example.com
 ```
 
-That's it. No protocols, no paths, no quotes. Raw hostnames only.
+See [redirects.txt reference](#redirectstxt-reference) for full syntax.
 
 ### 3. Update wrangler.toml
 
-Replace `inds.space` with your actual domain:
+Replace the zone and route entries with your own domain:
 
 ```toml
 name = "router"
@@ -76,21 +75,27 @@ main = "index.js"
 compatibility_date = "2024-09-23"
 
 routes = [
-  { pattern = "yourdomain.com/*",   zone_name = "yourdomain.com" },
-  { pattern = "*.yourdomain.com/*", zone_name = "yourdomain.com" },
+  { pattern = "example.com/*",     zone_name = "example.com" },
+  { pattern = "old.example.com/*", zone_name = "example.com" },
+  { pattern = "go.example.com/*",  zone_name = "example.com" },
 ]
 ```
 
-### 4. Configure DNS
+> **One route per redirect source.** Avoid wildcard routes (`*.example.com/*`) unless you
+> intend to intercept every subdomain. A wildcard captures all traffic on the zone —
+> subdomains with their own services will 404 until the wildcard is removed.
+> See [Route configuration](#route-configuration).
 
-In your Cloudflare DNS dashboard, add two proxied dummy records pointing to any valid IP (e.g. `192.0.2.1`):
+### 4. Add DNS records
 
-| Type | Name | Content    | Proxy |
-|------|------|------------|-------|
-| A    | @    | 192.0.2.1  | On    |
-| A    | *    | 192.0.2.1  | On    |
+Each route needs a proxied DNS record. The IP is just a placeholder — the Worker intercepts
+traffic before it reaches the origin.
 
-The Worker intercepts all traffic before it ever reaches the IP — the IP is just a placeholder to satisfy Cloudflare's DNS requirement.
+| Type | Name              | Content   | Proxy status |
+|------|-------------------|-----------|--------------|
+| A    | `@`               | 192.0.2.1 | Proxied      |
+| A    | `old`             | 192.0.2.1 | Proxied      |
+| A    | `go`              | 192.0.2.1 | Proxied      |
 
 ### 5. Deploy
 
@@ -98,12 +103,16 @@ The Worker intercepts all traffic before it ever reaches the IP — the IP is ju
 wrangler deploy
 ```
 
+That's it. Test with:
 
----
+```bash
+curl -I https://old.example.com/some/path
+```
 
-## redirects.txt Reference
+You should get a `301` response pointing to `https://www.example.com/some/path`.
 
-This is the single source of truth for all redirect behavior. The Worker reads this file at startup — nothing is hardcoded anywhere else.
+
+## redirects.txt reference
 
 ### Syntax
 
@@ -112,164 +121,97 @@ This is the single source of truth for all redirect behavior. The Worker reads t
 ```
 
 - One redirect per line
-- Raw hostnames only — no `https://`, no paths, no query strings
-- Both sides must be valid, fully-qualified hostnames with at least one dot
-- Everything is lowercased automatically
+- Raw hostnames only — no `https://`, no paths, no trailing slashes
+- Both sides must be valid fully-qualified hostnames (must contain at least one dot)
+- Hostnames are lowercased automatically
 
 ### Comments
 
-Both comment styles are supported:
-
 ```
-// This is a single-line comment
+// Single-line comment
 
 /*
-  This is a
-  multi-line block comment
+  Multi-line
+  block comment
 */
 ```
 
-### Example
+### Validation rules
 
-```
-// Apex to www
-inds.space --> www.inds.space
+| Condition | Result |
+|-----------|--------|
+| Line is not `source --> target` | Deploy fails with a parse error |
+| Hostname contains a protocol or path | Deploy fails |
+| Duplicate source hostname | Deploy fails |
+| Blank line or comment | Silently skipped |
 
-// Legacy subdomain
-old.inds.space --> www.inds.space
+Errors are caught at Worker startup — a bad `redirects.txt` fails the deploy before it ever goes live.
 
-/* Short link domain — remove after rebrand */
-go.inds.space --> www.inds.space
-```
+## Route configuration
 
-### Rules enforced by the parser
+`redirects.txt` and `wrangler.toml` must stay in sync. Every source hostname needs:
 
-| Rule | Behavior |
-|------|----------|
-| Invalid syntax (not `a --> b`) | Throws an error — deploy will fail |
-| Invalid hostname (e.g. `https://example.com`) | Throws an error |
-| Duplicate source hostname | Throws an error |
-| Empty source or target | Throws an error |
-| Blank lines and comments | Silently ignored |
+1. A line in `redirects.txt`
+2. A matching route in `wrangler.toml`
+3. A proxied A record in Cloudflare DNS
 
-Errors surface at Worker startup, which means a bad `redirects.txt` will cause your deploy to fail loudly before it ever reaches production.
+When you add a new redirect, add all three. When you remove one, remove all three.
 
----
+**Why not a wildcard?** A wildcard route (`*.example.com/*`) intercepts every subdomain on
+the zone. Anything not in `redirects.txt` returns a 404 — including subdomains you have
+running other services on. Use explicit routes.
 
-## How It Works
+## How it works
 
 ### Request lifecycle
 
 ```
 Incoming request
-  └─ index.js         exports default fetch handler
-       └─ router.js   extracts hostname, looks up REDIRECTS map
-            ├─ Match found  →  301 redirect to https://<target><path><query>
-            └─ No match     →  404.html with status 404
+  └── index.js        Worker entrypoint, exports fetch handler
+       └── router.js  Extracts hostname, looks up REDIRECTS map
+            ├── Match found   →  301 redirect, path + query preserved
+            └── No match      →  404.html, status 404
 ```
 
-### Startup (module load)
+### Startup
 
-When the Worker isolate initializes, `router.js` runs its top-level module code:
+When the isolate initializes, `router.js` runs its top-level module code:
 
 ```js
 const REDIRECTS = parseRedirects(rawRedirects);
 ```
 
-`rawRedirects` is the contents of `redirects.txt`, bundled as a text module by Wrangler at build time. `parseRedirects` runs once and the result is cached in the isolate's memory for every subsequent request — there's no file I/O at request time.
+`redirects.txt` is bundled as a text module by Wrangler at build time. `parseRedirects`
+runs once and the result is cached for every subsequent request — no file I/O at request time.
 
-### Redirect behavior
 
-Matching is exact hostname-only. Given a request to `https://old.inds.space/blog/post?ref=twitter`:
+## Local development
 
-1. Hostname extracted: `old.inds.space`
-2. Lookup in `REDIRECTS`: found → `www.inds.space`
-3. Destination built: `https://www.inds.space/blog/post?ref=twitter`
-4. Response: `301 Moved Permanently`
-
-Pathname and search string are always preserved verbatim.
-
-### 404 behavior
-
-If no redirect matches, the Worker returns `404.html` with:
-- HTTP status `404`
-- `Content-Type: text/html; charset=utf-8`
-
----
-
-## File Reference
-
-### `index.js`
-
-The Worker entrypoint. Intentionally kept to the absolute minimum — just imports `handleRequest` from `router.js` and passes the request through. Never add logic here.
-
-```js
-import { handleRequest } from "./router.js";
-
-export default {
-  async fetch(request, env, ctx) {
-    return handleRequest(request);
-  },
-};
+```bash
+wrangler dev
 ```
 
-### `router.js`
+Test redirects with a custom `Host` header:
 
-Contains all runtime logic. Imports `redirects.txt` and `404.html` as static text modules (bundled at build time by Wrangler). Parses the redirect map once at module load. Exports `handleRequest`.
-
-Key behaviors:
-- `new URL(request.url)` — parses hostname, pathname, and search
-- `REDIRECTS[hostname]` — O(1) object property lookup
-- `Response.redirect(destination, 301)` — permanent redirect
-- Fallback returns raw HTML string with status 404
-
-### `parser.js`
-
-Pure function. Takes the raw string contents of `redirects.txt`, returns a plain `Object.create(null)` map with no prototype chain.
-
-Processing steps in order:
-1. Strip `/* */` block comments (handles multiline with `[\s\S]*?`)
-2. Strip `//` line comments
-3. Split on `\n`
-4. Trim each line, skip blanks
-5. Split on `-->`, expect exactly 2 parts
-6. Lowercase both sides
-7. Validate each side against `HOSTNAME_RE`
-8. Check for duplicate sources
-9. Write to map and continue
-
-`HOSTNAME_RE` pattern: `/^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)+$/`
-
-Accepts labels that start and end with alphanumerics, contain hyphens internally, and require at least one dot (i.e. a real FQDN, not a bare label).
-
-### `wrangler.toml`
-
-Minimal Cloudflare Worker config. Update `name`, the `zone_name`, and the route patterns to match your domain before deploying.
-
-```toml
-name = "router"
-main = "index.js"
-compatibility_date = "2024-09-23"
-
-routes = [
-  { pattern = "inds.space/*",   zone_name = "inds.space" },
-  { pattern = "*.inds.space/*", zone_name = "inds.space" },
-]
+```bash
+curl -H "Host: old.example.com" http://localhost:8787/some/path
 ```
 
-The two routes cover:
-- The apex domain (`inds.space`)
-- All subdomains (`*.inds.space`)
+## Troubleshooting
 
-### `404.html`
+**Deploy fails with a parse error**
+Check `redirects.txt` for lines that include `https://`, a trailing path, or a missing `-->`.
 
-Standalone HTML page served for unmatched hostnames. Self-contained — no external CSS, no JavaScript, no fonts. The "Back to website" link points to `https://www.inds.space` — update this if your canonical home URL changes.
+**A subdomain is returning 404 after deploy**
+That subdomain is probably being intercepted by a route in `wrangler.toml` but has no
+matching entry in `redirects.txt`. Either add the redirect or remove the route.
 
----
+**Services on other subdomains went down after deploy**
+You likely deployed with a wildcard route. Replace `*.example.com/*` with explicit routes
+— one per redirect source. See [Route configuration](#route-configuration).
 
-## Wrangler Module Rules
-
-Wrangler 3+ typically auto-detects `.txt` and `.html` as text modules. If you get a bundling error on deploy, add this to `wrangler.toml`:
+**Wrangler can't find the text modules**
+Add this to `wrangler.toml`:
 
 ```toml
 [[rules]]
@@ -277,30 +219,9 @@ type = "Text"
 globs = ["**/*.txt", "**/*.html"]
 ```
 
----
+## Contributing
 
-## Local Development
-
-```bash
-wrangler dev
-```
-
-This starts a local dev server (default: `http://localhost:8787`). You can test redirects by hitting the local URL with a custom `Host` header:
-
-```bash
-curl -H "Host: inds.space" http://localhost:8787/some/path
-```
-
----
-
-## Adding or Changing Redirects
-
-1. Edit `redirects.txt`
-2. Run `wrangler deploy`
-
-No code changes needed. The parser re-runs at every deploy and will throw if anything is wrong before the Worker goes live.
-
----
+Issues and pull requests are welcome. Please open an issue before submitting a large change.
 
 ## License
 
