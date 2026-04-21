@@ -1,0 +1,10 @@
+name = "router"
+main = "index.js"
+compatibility_date = "2024-09-23"
+
+# Covers apex and all subdomains.
+# DNS must have a proxied root A/AAAA record and a proxied wildcard A/AAAA record.
+routes = [
+  { pattern = "inds.space/*",   zone_name = "inds.space" },
+  { pattern = "*.inds.space/*", zone_name = "inds.space" },
+]
