@@ -4,7 +4,7 @@
 
 Every domain you own is a liability if it's not pointed somewhere. Router fixes forgotten apex domains, legacy subdomains, and short links — all from a single plain-text config file deployed as a Cloudflare Worker. No server, no database, no framework.
 
-Live on [inds.space](https://www.inds.space) — routing `inds.space`, `biz.inds.space`, `go.inds.space`, and more.
+Live on [inds.space](https://www.inds.space) — routing `inds.space`, `go.inds.space`, and more.
 
 ## Features
 
