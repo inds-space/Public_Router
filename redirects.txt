@@ -1,10 +1,7 @@
-/*
-  redirects.txt
-  Format:  <source-hostname> --> <target-hostname>
-  - Raw hostnames only (no https://, no paths, no queries)
-  - One redirect per line
-  - // and /* */ comments are supported
-*/
+// redirects.txt
+// Format:  <source-hostname> --> <target-hostname>
+// - Raw hostnames only (no https://, no paths, no queries)
+// - One redirect per line
 
 // Apex to www
 inds.space --> www.inds.space
@@ -12,6 +9,5 @@ inds.space --> www.inds.space
 // Legacy domain forwarding
 old.inds.space --> www.inds.space
 
-/* Short link domain —
-   keep this until the rebrand is complete */
+// Short link domain - keep until rebrand is complete
 go.inds.space --> www.inds.space
