@@ -2,11 +2,14 @@ name = "router"
 main = "index.js"
 compatibility_date = "2024-09-23"
 
-# One route per redirect source. Only these exact hostnames are intercepted.
-# Add a new route here whenever you add a new source in redirects.txt.
-# DNS must have a proxied dummy record for each hostname listed.
-routes = [
-  { pattern = "inds.space/*",     zone_name = "inds.space" },
-  { pattern = "old.inds.space/*", zone_name = "inds.space" },
-  { pattern = "go.inds.space/*",  zone_name = "inds.space" },
-]
+# Custom domains — CF auto-issues SSL certs, no dummy DNS A records needed.
+# Add a new [[custom_domains]] block for each source in redirects.txt.
+
+[[custom_domains]]
+pattern = "inds.space"
+
+[[custom_domains]]
+pattern = "old.inds.space"
+
+[[custom_domains]]
+pattern = "go.inds.space"
