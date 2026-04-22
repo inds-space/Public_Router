@@ -1,20 +1,16 @@
 # Router
 
-[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-
 Hostname redirects at the Cloudflare edge, configured by a text file, with no dashboard clicks and no hardcoded routes.
 
 ---
 
 ## Why Router?
 
-**Cloudflare dashboard redirect rules** have no git history, no code review, and no SSL support for second-level subdomains (e.g. `sub.domain.example.com`) on the Free plan.
+**Cloudflare dashboard redirect rules** have no git history, no code you can review, and no SSL support for second-level subdomains (e.g. `sub.domain.example.com`) on the Free plan.
 
 **Bulk redirect rules** share the same problems and add a clunky UI on top.
 
 **Workers with hardcoded routes** mix config and logic in the same file. Every redirect change is a code change and a redeploy.
-
-**Nginx or Apache redirect configs** are not running at the edge. They require a server, a process, and a deploy pipeline just to forward a hostname.
 
 **Router** keeps redirect rules in `redirects.txt`, domains in `wrangler.toml`, and runs the lookup at the Cloudflare edge with zero origin servers. Config changes are a text edit and a `wrangler deploy`. The git history is the audit log.
 
@@ -224,15 +220,24 @@ Expected response: `308` redirect to `https://www.example.com/blog/post?ref=x`.
 
 ## Deployment
 
-Recommended change flow:
+### Prerequirements
 
-1. Edit `redirects.txt` with new or updated rules
-2. Update `wrangler.toml` if any source hostnames were added or removed
-3. Check Cloudflare DNS for conflicting A, AAAA, or CNAME records on affected hostnames. Remove them before assigning as Worker custom domains.
-4. Run `wrangler deploy`
-5. Test each changed hostname
+0. [Git](https://git-scm.com/)/Github CLI Installed 
+1. Wrangler Installed 
+2. Cloudflare with full DNS Setup
 
-Cloudflare handles TLS certificate issuance for custom domains. Certificates may take a few minutes to become active after first setup.
+### Then follow those steps:
+
+0. Clone the repo with `git clone https://github.com/inds-space/Public_Router` 
+1. Update `redirects.txt` with your redirect rules
+2. Update `wrangler.toml` with your domains
+3. Check Cloudflare DNS for conflicting A, AAAA, or CNAME records on affected domains. Remove them before assigning as Worker custom domains.
+4. If not authenticated with Wrangler, authenticate with `wrangler login`
+5. Run `wrangler deploy`
+
+Enjoy your brand new redirects system and star the repo to not miss any updates!
+
+Cloudflare handles TLS certificate issuance for custom domains. Certificates may take ~15-30 mins to become active after first setup.
 
 ---
 
@@ -270,13 +275,13 @@ If you used a full URL target and expected path preservation, change the target 
 
 ## Production Example
 
-Router currently powers the `inds.space` setup. A sample of active rules:
+Router currently powers `inds.space`. A sample of active rules:
 
 ```
 // Apex to www
 inds.space --> www.inds.space
 
-// Discord shortlink
+// Discord Links
 my.dc.inds.space --> my.discord.inds.space
 my.discord.inds.space --> https://discord.com/users/1176951696048541827
 
