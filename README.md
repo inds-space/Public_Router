@@ -1,209 +1,165 @@
 # Router
 
-Cloudflare Worker for hostname-based redirects with a plain-text config file.
+[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Router keeps redirects simple:
+Hostname redirects at the Cloudflare edge, configured by a text file, with no dashboard clicks and no hardcoded routes.
 
-- define rules in `redirects.txt`
-- deploy to Cloudflare Workers
-- redirect at the edge with no origin server
+---
 
-It currently powers the live `inds.space` setup, and this public repo is the reusable version of that pattern.
+## Why Router?
 
-## Table of Contents
+**Cloudflare dashboard redirect rules** have no git history, no code review, and no SSL support for second-level subdomains (e.g. `sub.domain.example.com`) on the Free plan.
 
-- [Overview](#overview)
-- [Features](#features)
-- [How It Works](#how-it-works)
-- [Project Structure](#project-structure)
-- [Redirect Configuration](#redirect-configuration)
-- [Cloudflare Configuration](#cloudflare-configuration)
-- [Quick Start](#quick-start)
-- [Local Development](#local-development)
-- [Deployment](#deployment)
-- [Troubleshooting](#troubleshooting)
-- [Production Example](#production-example)
-- [License](#license)
+**Bulk redirect rules** share the same problems and add a clunky UI on top.
+
+**Workers with hardcoded routes** mix config and logic in the same file. Every redirect change is a code change and a redeploy.
+
+**Nginx or Apache redirect configs** are not running at the edge. They require a server, a process, and a deploy pipeline just to forward a hostname.
+
+**Router** keeps redirect rules in `redirects.txt`, domains in `wrangler.toml`, and runs the lookup at the Cloudflare edge with zero origin servers. Config changes are a text edit and a `wrangler deploy`. The git history is the audit log.
+
+---
 
 ## Overview
 
-Router maps one hostname to another destination and responds directly from the Cloudflare edge.
+Router is a Cloudflare Worker that maps source hostnames to redirect targets. On every request, the Worker parses `redirects.txt` and performs a lookup against the incoming hostname. The file is bundled at deploy time, so parsing is a pure in-memory string operation with no I/O. There is no caching layer and no shared state across isolates or regions. Each request is fully stateless.
+
+Unmatched hostnames return a clean `404.html` page with dark mode and a Back to Home button.
 
 Two target formats are supported:
 
-```txt
+```
 source.example.com --> target.example.com
 source.example.com --> https://full.url/path
 ```
 
-Behavior:
-
-- Hostname target: redirects to `https://<target>` and preserves the original path and query string
-- Full URL target: redirects to the exact target URL and appends the original query string if present
-- Unmatched hostnames return the bundled `404.html` page
-
-At startup, the Worker parses `redirects.txt` once and keeps the redirect map in memory for request-time lookups.
+---
 
 ## Features
 
-- Plain-text redirect config in `redirects.txt`
-- Startup-time validation for malformed rules and duplicates
-- `308` redirects from the edge
-- Path and query preservation for hostname redirects
-- Support for external full-URL destinations
-- Custom `404.html` fallback
-- No runtime dependencies
+- **Six files, ~200 lines.** `index.js`, `router.js`, `parser.js`, `redirects.txt`, `404.html`, `wrangler.toml`. Nothing hidden, nothing abstracted away.
+- **Unlimited custom domains.** Add as many `[[routes]]` entries to `wrangler.toml` as you need.
+- **Plain-text config.** All redirect rules live in `redirects.txt`. No database, no API calls, no dashboard state.
+- **Fail-fast validation.** The parser catches invalid hostnames, missing separators, duplicate sources, and invalid targets at startup. A bad config fails the deploy, not a live request.
+- **308 redirects.** All redirects use HTTP 308 Permanent Redirect, which preserves the request method.
+- **Two target modes.** Hostname targets preserve the original path and query string. Full URL targets fix the destination path and append the original query string only.
+- **Comment support.** `redirects.txt` accepts `//` single-line and `/* */` block comments.
+- **Custom 404 fallback.** Unmatched hostnames get a clean dark-mode 404 page.
+- **No runtime dependencies.** Plain JavaScript, no npm packages.
+- **Fully stateless.** No module-level caching. No shared state between isolates or Cloudflare regions. Every request parses fresh from the bundled file.
+
+---
 
 ## How It Works
 
-Request lifecycle:
+**Request lifecycle:**
 
-1. `index.js` receives the request and forwards it to `handleRequest`
-2. `router.js` extracts the request hostname
-3. The hostname is matched against the parsed redirect map
-4. If matched, Router returns a `308` redirect
-5. If not matched, Router returns `404.html` with status `404`
+1. `index.js` receives the incoming request and calls `handleRequest`
+2. `router.js` parses `redirects.txt` and builds the redirect map for this request
+3. The hostname is extracted and matched against the map
+4. Matched: returns a `308` redirect
+5. Unmatched: returns `404.html` with status `404`
 
-Startup lifecycle:
+**Deploy lifecycle:**
 
-1. Wrangler bundles `redirects.txt` and `404.html` as text modules
-2. `router.js` imports the raw redirect file
-3. `parser.js` validates and parses all entries
-4. The parsed redirect map is cached for reuse
+1. Wrangler bundles `redirects.txt` and `404.html` as static text modules
+2. On each request, `router.js` passes the raw text to `parser.js`
+3. `parser.js` validates every line and returns the redirect map
+4. The map is used for the lookup and discarded after the response
 
-Validation fails fast on:
+No state persists between requests. No isolate-level cache. This is intentional: Cloudflare Workers run across hundreds of global PoPs in independent isolates with no shared memory. A module-level cache would not be consistent across regions and would silently diverge after cold starts. Parsing on every request from the bundled static string is cheap and correct.
 
-- invalid source hostnames
-- malformed `source --> target` lines
-- duplicate source hostnames
-- invalid targets that are neither hostnames nor full URLs
+**Validation rejects:**
+
+- Invalid source hostnames
+- Lines missing the ` --> ` separator
+- Duplicate source hostnames
+- Targets that are neither valid hostnames nor full URLs
+
+---
 
 ## Project Structure
 
-```txt
+```
 /
 ├── index.js        # Worker entrypoint
 ├── router.js       # Redirect lookup and response handling
-├── parser.js       # redirects.txt parser and validation
-├── redirects.txt   # Redirect source of truth
-├── 404.html        # Custom not-found page
-└── wrangler.toml   # Worker deployment and custom domain config
+├── parser.js       # redirects.txt parser and validator
+├── redirects.txt   # Redirect rules
+├── 404.html        # Custom not-found response
+└── wrangler.toml   # Worker name, entry, and custom domain config
 ```
 
-## Redirect Configuration
+---
 
-### Syntax
+## Configuration Reference
 
-```txt
+### Redirect Syntax
+
+```
 source.example.com --> target.example.com
 source.example.com --> https://full.url/path
 ```
 
-Rules:
+| Field | Rules |
+|---|---|
+| Source | Valid hostname. One per line. No duplicates. |
+| Separator | Must be ` --> ` (space, two hyphens, right angle bracket, space). |
+| Target | Either a valid hostname or a full URL starting with `https://`. |
 
-- one redirect per line
-- source must be a hostname
-- target can be a hostname or a full URL
-- hostnames are normalized to lowercase
-- blank lines are ignored
+Hostnames are normalized to lowercase. Blank lines are ignored.
 
-### Comments
+### Target Modes
 
-`redirects.txt` supports both comment styles:
+**Hostname target** preserves the original path and query string.
 
-```txt
-// single-line comment
-
-/*
-  multi-line block comment
-*/
 ```
-
-### Examples
-
-```txt
-example.com --> www.example.com
-go.example.com --> https://docs.example.com/start
-```
-
-### Redirect Behavior
-
-For hostname targets:
-
-```txt
 old.example.com --> www.example.com
 ```
 
-Request:
+Request: `https://old.example.com/blog/post?ref=x`
+Redirects to: `https://www.example.com/blog/post?ref=x`
 
-```txt
-https://old.example.com/blog/post?ref=x
+**Full URL target** fixes the destination path and appends the original query string only.
+
 ```
-
-Response destination:
-
-```txt
-https://www.example.com/blog/post?ref=x
-```
-
-For full URL targets:
-
-```txt
 go.example.com --> https://docs.example.com/start
 ```
 
-Request:
+Request: `https://go.example.com/anything?ref=x`
+Redirects to: `https://docs.example.com/start?ref=x`
 
-```txt
-https://go.example.com/anything?ref=x
+The original path is not preserved for full URL targets.
+
+### Comment Syntax
+
+```
+// Single-line comment
+
+/*
+  Multi-line
+  block comment
+*/
+
+example.com --> www.example.com
 ```
 
-Response destination:
-
-```txt
-https://docs.example.com/start?ref=x
-```
-
-The original path is not preserved for full URL targets. The original query string is appended if present.
-
-## Cloudflare Configuration
-
-This repo uses Cloudflare custom domains in `wrangler.toml`:
-
-```toml
-[[routes]]
-pattern = "example.com"
-custom_domain = true
-```
-
-Each source hostname should have a matching `[[routes]]` entry.
-
-Important notes:
-
-- remove any existing A, AAAA, or CNAME record for a hostname before assigning it as a Worker custom domain
-- Cloudflare handles certificate issuance for the custom domains
-- certificates may take some time to become active after first setup
-
-Keep these in sync:
-
-1. `redirects.txt`
-2. `wrangler.toml`
-3. Cloudflare DNS and Worker custom-domain state
+---
 
 ## Quick Start
 
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/your-username/router.git
-cd router
+git clone https://github.com/inds-space/Public_Router.git
+cd Public_Router
 ```
 
-### 2. Add redirect rules
+### 2. Add your redirect rules
 
 Edit `redirects.txt`:
 
-```txt
+```
 example.com --> www.example.com
 old.example.com --> www.example.com
 go.example.com --> https://docs.example.com/start
@@ -231,6 +187,8 @@ pattern = "go.example.com"
 custom_domain = true
 ```
 
+Every source hostname in `redirects.txt` needs a matching `[[routes]]` entry.
+
 ### 4. Authenticate Wrangler
 
 ```bash
@@ -244,72 +202,92 @@ wrangler login
 wrangler deploy
 ```
 
+---
+
 ## Local Development
 
-Run locally:
+Start a local dev server:
 
 ```bash
 wrangler dev
 ```
 
-Test with a custom host header:
+Test with a custom `Host` header:
 
 ```bash
 curl -H "Host: old.example.com" http://localhost:8787/blog/post?ref=x
 ```
 
+Expected response: `308` redirect to `https://www.example.com/blog/post?ref=x`.
+
+---
+
 ## Deployment
 
 Recommended change flow:
 
-1. edit `redirects.txt`
-2. update `wrangler.toml` if source hostnames changed
-3. check Cloudflare for conflicting DNS records
-4. run `wrangler deploy`
-5. test each changed hostname
+1. Edit `redirects.txt` with new or updated rules
+2. Update `wrangler.toml` if any source hostnames were added or removed
+3. Check Cloudflare DNS for conflicting A, AAAA, or CNAME records on affected hostnames. Remove them before assigning as Worker custom domains.
+4. Run `wrangler deploy`
+5. Test each changed hostname
+
+Cloudflare handles TLS certificate issuance for custom domains. Certificates may take a few minutes to become active after first setup.
+
+---
 
 ## Troubleshooting
 
 ### Deploy fails with a parser error
 
-Check for:
+The Worker validates `redirects.txt` at startup. The error message from `wrangler deploy` will identify the offending line. Common causes:
 
-- missing `-->`
-- invalid hostname syntax
-- duplicate source hostnames
-- malformed full URLs
+- A line missing the ` --> ` separator
+- An invalid hostname in the source field (contains a path or protocol)
+- A duplicate source hostname
+- A target that is neither a hostname nor a full URL starting with `https://`
 
 ### Redirect returns 404
 
-Usually one of these is missing:
+All three must be true for a redirect to work:
 
-- the hostname is not present in `redirects.txt`
-- the hostname is not configured in `wrangler.toml`
-- the custom domain is not fully active in Cloudflare yet
+1. The hostname is in `redirects.txt`
+2. The hostname has a matching `[[routes]]` entry in `wrangler.toml`
+3. The custom domain is fully active in Cloudflare (check the Workers dashboard)
+
+If the custom domain was just added, wait a few minutes for the certificate to provision.
 
 ### Redirect target is wrong
 
-Check whether the rule uses:
+Check which target mode the rule uses:
 
-- a hostname target, which preserves path and query
-- a full URL target, which keeps the fixed target path and only appends the query string
+- Hostname target: preserves the full original path and query string
+- Full URL target: locks the destination path, appends query string only
+
+If you used a full URL target and expected path preservation, change the target to a bare hostname.
+
+---
 
 ## Production Example
 
-The live `inds.space` deployment uses the same codebase pattern represented here.
+Router currently powers the `inds.space` setup. A sample of active rules:
 
-Example rules currently in use across the public/private setup include:
+```
+// Apex to www
+inds.space --> www.inds.space
 
-- `inds.space --> www.inds.space`
-- `my.dc.inds.space --> my.discord.inds.space`
-- `code.inds.space --> https://vscode.dev/tunnel/hacktheworld/`
-- `my.discord.inds.space --> https://discord.com/users/1176951696048541827`
+// Discord shortlink
+my.dc.inds.space --> my.discord.inds.space
+my.discord.inds.space --> https://discord.com/users/1176951696048541827
 
-That mix shows both supported routing modes:
+// VS Code tunnel shortlink
+code.inds.space --> https://vscode.dev/tunnel/hacktheworld/
+```
 
-- hostname to hostname
-- hostname to full URL
+This covers both target modes in real use: hostname-to-hostname for the apex redirect and vanity alias, full URL for external service destinations. One Worker handles all of them from a single deploy.
+
+---
 
 ## License
 
-MIT
+[MIT](LICENSE)
