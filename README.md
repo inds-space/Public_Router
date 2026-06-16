@@ -284,9 +284,6 @@ inds.space --> www.inds.space
 // Discord Links
 my.dc.inds.space --> my.discord.inds.space
 my.discord.inds.space --> https://discord.com/users/1176951696048541827
-
-// VS Code tunnel shortlink
-code.inds.space --> https://vscode.dev/tunnel/hacktheworld/
 ```
 
 This covers both target modes in real use: hostname-to-hostname for the apex redirect and vanity alias, full URL for external service destinations. One Worker handles all of them from a single deploy.
