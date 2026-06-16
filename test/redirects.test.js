@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { parseRedirects } from "../parser.js";
-import { resolveRedirect } from "../redirector.js";
+import { resolveRedirect } from "../router.js";
 
 test("hostname redirects preserve path and query with default http", () => {
   const redirects = parseRedirects("old.example.com --> new.example.com");
