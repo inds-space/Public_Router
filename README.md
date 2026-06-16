@@ -1,6 +1,6 @@
 # Router
 
-Hostname redirects at the Cloudflare edge, configured by a text file, with no dashboard clicks and no hardcoded routes.
+Hostname and path redirects at the Cloudflare edge, configured by a text file, with no dashboard clicks and no hardcoded routes.
 
 ---
 
@@ -18,27 +18,31 @@ Hostname redirects at the Cloudflare edge, configured by a text file, with no da
 
 ## Overview
 
-Router is a Cloudflare Worker that maps source hostnames to redirect targets. On every request, the Worker parses `redirects.txt` and performs a lookup against the incoming hostname. The file is bundled at deploy time, so parsing is a pure in-memory string operation with no I/O. There is no caching layer and no shared state across isolates or regions. Each request is fully stateless.
+Router is a Cloudflare Worker that maps source hostnames and source paths to redirect targets. On every request, the Worker parses `redirects.txt` and performs a lookup against the incoming hostname and path. The file is bundled at deploy time, so parsing is a pure in-memory string operation with no I/O. There is no caching layer and no shared state across isolates or regions. Each request is fully stateless.
 
 Unmatched hostnames return a clean `404.html` page with dark mode and a Back to Home button.
 
-Two target formats are supported:
+Hostname, exact-path, and wildcard-path sources are supported:
 
 ```
 source.example.com --> target.example.com
-source.example.com --> https://full.url/path
+source.example.com/path --> target.example.com/path
+source.example.com/path/* --> target.example.com/base/*
 ```
 
 ---
 
 ## Features
 
-- **Six files, ~200 lines.** `index.js`, `router.js`, `parser.js`, `redirects.txt`, `404.html`, `wrangler.toml`. Nothing hidden, nothing abstracted away.
+- **Small codebase.** `index.js`, `router.js`, `redirector.js`, `parser.js`, `redirects.txt`, `404.html`, `wrangler.toml`. Nothing hidden, nothing abstracted away.
 - **Unlimited custom domains.** Add as many `[[routes]]` entries to `wrangler.toml` as you need.
+- **Unlimited path redirects per domain.** One custom domain route can serve exact and wildcard path redirects for that domain.
 - **Plain-text config.** All redirect rules live in `redirects.txt`. No database, no API calls, no dashboard state.
 - **Fail-fast validation.** The parser catches invalid hostnames, missing separators, duplicate sources, and invalid targets at startup. A bad config fails the deploy, not a live request.
 - **308 redirects.** All redirects use HTTP 308 Permanent Redirect, which preserves the request method.
-- **Two target modes.** Hostname targets preserve the original path and query string. Full URL targets fix the destination path and append the original query string only.
+- **Path-aware routing.** Exact path rules match only that path. Wildcard rules ending in `/*` preserve the matched suffix.
+- **Protocol optional targets.** Targets can omit `http://` or `https://`; Router prepends `http://` by default.
+- **Query preservation.** Query strings are preserved for hostname, exact path, and wildcard path redirects.
 - **Comment support.** `redirects.txt` accepts `//` single-line and `/* */` block comments.
 - **Custom 404 fallback.** Unmatched hostnames get a clean dark-mode 404 page.
 - **No runtime dependencies.** Plain JavaScript, no npm packages.
@@ -52,8 +56,8 @@ source.example.com --> https://full.url/path
 
 1. `index.js` receives the incoming request and calls `handleRequest`
 2. `router.js` parses `redirects.txt` and builds the redirect map for this request
-3. The hostname is extracted and matched against the map
-4. Matched: returns a `308` redirect
+3. The hostname and path are extracted and matched against the map
+4. Matched: path redirects win first, then hostname redirects, and Router returns a `308`
 5. Unmatched: returns `404.html` with status `404`
 
 **Deploy lifecycle:**
@@ -67,10 +71,10 @@ No state persists between requests. No isolate-level cache. This is intentional:
 
 **Validation rejects:**
 
-- Invalid source hostnames
+- Invalid source hostnames or source paths
 - Lines missing the ` --> ` separator
-- Duplicate source hostnames
-- Targets that are neither valid hostnames nor full URLs
+- Duplicate sources
+- Targets that are neither valid hostnames nor valid URLs
 
 ---
 
@@ -79,7 +83,8 @@ No state persists between requests. No isolate-level cache. This is intentional:
 ```
 /
 ├── index.js        # Worker entrypoint
-├── router.js       # Redirect lookup and response handling
+├── router.js       # Request handling
+├── redirector.js   # Redirect matching and destination building
 ├── parser.js       # redirects.txt parser and validator
 ├── redirects.txt   # Redirect rules
 ├── 404.html        # Custom not-found response
@@ -94,38 +99,51 @@ No state persists between requests. No isolate-level cache. This is intentional:
 
 ```
 source.example.com --> target.example.com
-source.example.com --> https://full.url/path
+source.example.com/path --> target.example.com/path
+source.example.com/path/* --> target.example.com/base/*
 ```
 
 | Field | Rules |
 |---|---|
-| Source | Valid hostname. One per line. No duplicates. |
+| Source | Valid hostname, optionally followed by an exact path or a wildcard path ending in `/*`. Path-only sources are invalid. |
 | Separator | Must be ` --> ` (space, two hyphens, right angle bracket, space). |
-| Target | Either a valid hostname or a full URL starting with `https://`. |
+| Target | Either a valid hostname or a valid URL. Protocol is optional and defaults to `http://`. |
 
-Hostnames are normalized to lowercase. Blank lines are ignored.
+Hostnames are normalized to lowercase. Blank lines are ignored. Every source domain needs a matching `[[routes]]` entry in `wrangler.toml`, even when the source includes a path.
 
-### Target Modes
+### Matching Modes
 
-**Hostname target** preserves the original path and query string.
+**Hostname source** preserves the original path and query string.
 
 ```
 old.example.com --> www.example.com
 ```
 
 Request: `https://old.example.com/blog/post?ref=x`
-Redirects to: `https://www.example.com/blog/post?ref=x`
+Redirects to: `http://www.example.com/blog/post?ref=x`
 
-**Full URL target** fixes the destination path and appends the original query string only.
+**Exact path source** matches only the exact path and preserves the query string.
 
 ```
-go.example.com --> https://docs.example.com/start
+go.example.com/start --> docs.example.com/read
 ```
 
-Request: `https://go.example.com/anything?ref=x`
-Redirects to: `https://docs.example.com/start?ref=x`
+Request: `https://go.example.com/start?ref=x`
+Redirects to: `http://docs.example.com/read?ref=x`
 
-The original path is not preserved for full URL targets.
+Request: `https://go.example.com/start/extra?ref=x`
+Does not match that exact path rule.
+
+**Wildcard path source** matches descendants and preserves the matched suffix.
+
+```
+go.example.com/docs/* --> docs.example.com/start/*
+```
+
+Request: `https://go.example.com/docs/a/b?ref=x`
+Redirects to: `http://docs.example.com/start/a/b?ref=x`
+
+Path rules beat hostname rules for the same source domain.
 
 ### Comment Syntax
 
@@ -158,7 +176,8 @@ Edit `redirects.txt`:
 ```
 example.com --> www.example.com
 old.example.com --> www.example.com
-go.example.com --> https://docs.example.com/start
+go.example.com/start --> docs.example.com/read
+go.example.com/docs/* --> docs.example.com/start/*
 ```
 
 ### 3. Add matching custom domains
@@ -183,7 +202,7 @@ pattern = "go.example.com"
 custom_domain = true
 ```
 
-Every source hostname in `redirects.txt` needs a matching `[[routes]]` entry.
+Every source domain in `redirects.txt` needs a matching `[[routes]]` entry. One route for `go.example.com` covers unlimited path redirects under that domain.
 
 ### 4. Authenticate Wrangler
 
@@ -214,7 +233,7 @@ Test with a custom `Host` header:
 curl -H "Host: old.example.com" http://localhost:8787/blog/post?ref=x
 ```
 
-Expected response: `308` redirect to `https://www.example.com/blog/post?ref=x`.
+Expected response: `308` redirect to `http://www.example.com/blog/post?ref=x`.
 
 ---
 
@@ -248,28 +267,30 @@ Cloudflare handles TLS certificate issuance for custom domains. Certificates may
 The Worker validates `redirects.txt` at startup. The error message from `wrangler deploy` will identify the offending line. Common causes:
 
 - A line missing the ` --> ` separator
-- An invalid hostname in the source field (contains a path or protocol)
-- A duplicate source hostname
-- A target that is neither a hostname nor a full URL starting with `https://`
+- An invalid hostname in the source field
+- A source path without a source domain
+- A wildcard source that does not end in `/*`
+- A duplicate source
+- A target that is not a valid hostname or URL
 
 ### Redirect returns 404
 
 All three must be true for a redirect to work:
 
-1. The hostname is in `redirects.txt`
-2. The hostname has a matching `[[routes]]` entry in `wrangler.toml`
+1. The hostname or hostname/path source is in `redirects.txt`
+2. The source domain has a matching `[[routes]]` entry in `wrangler.toml`
 3. The custom domain is fully active in Cloudflare (check the Workers dashboard)
 
 If the custom domain was just added, wait a few minutes for the certificate to provision.
 
 ### Redirect target is wrong
 
-Check which target mode the rule uses:
+Check which matching mode the rule uses:
 
-- Hostname target: preserves the full original path and query string
-- Full URL target: locks the destination path, appends query string only
-
-If you used a full URL target and expected path preservation, change the target to a bare hostname.
+- Hostname source: preserves the full original path and query string
+- Exact path source: matches only that path and preserves query string
+- Wildcard path source ending in `/*`: preserves the matched suffix and query string
+- Protocol-less target: defaults to `http://`
 
 ---
 
@@ -287,9 +308,12 @@ my.discord.inds.space --> https://discord.com/users/1176951696048541827
 
 // VS Code tunnel shortlink
 code.inds.space --> https://vscode.dev/tunnel/hacktheworld/
+
+// Path shortlink
+go.inds.space/docs/* --> docs.inds.space/start/*
 ```
 
-This covers both target modes in real use: hostname-to-hostname for the apex redirect and vanity alias, full URL for external service destinations. One Worker handles all of them from a single deploy.
+This covers hostname redirects, explicit HTTPS targets, and wildcard path redirects. One Worker handles all of them from a single deploy.
 
 ---
 

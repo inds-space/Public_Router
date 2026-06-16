@@ -8,6 +8,7 @@
 import rawRedirects from "./redirects.txt";
 import notFoundHtml from "./404.html";
 import { parseRedirects } from "./parser.js";
+import { resolveRedirect } from "./redirector.js";
 
 /**
  * @param {Request} request
@@ -17,22 +18,9 @@ export function handleRequest(request) {
   // Parse on every request so redirects are always fresh (no stale isolate cache).
   const redirects = parseRedirects(rawRedirects);
 
-  const url = new URL(request.url);
-  const hostname = url.hostname.toLowerCase();
+  const destination = resolveRedirect(redirects, request.url);
 
-  const entry = redirects[hostname];
-
-  if (entry) {
-    let destination;
-    if (entry.type === "url") {
-      // Full URL target — redirect to specified URL, append original query string if present
-      destination = url.search
-        ? `${entry.target}${entry.target.includes("?") ? "&" : "?"}${url.search.slice(1)}`
-        : entry.target;
-    } else {
-      // Hostname target — preserve original path + query, prepend https://
-      destination = `https://${entry.target}${url.pathname}${url.search}`;
-    }
+  if (destination) {
     return Response.redirect(destination, 308);
   }
 
