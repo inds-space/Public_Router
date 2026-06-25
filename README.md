@@ -65,6 +65,53 @@ Add your rules to `redirects.txt` and make sure each source domain also exists i
 - Deploy error: check for a bad hostname, bad target, missing ` --> `, or duplicate source.
 - Redirect miss: make sure the source rule exists and the domain is bound in `wrangler.toml`.
 - Wrong destination: confirm whether the rule is hostname, exact-path, or wildcard.
+=======
+### Deploy fails with a parser error
+
+The Worker validates `redirects.txt` at startup. The error message from `wrangler deploy` will identify the offending line. Common causes:
+
+- A line missing the ` --> ` separator
+- An invalid hostname in the source field (contains a path or protocol)
+- A duplicate source hostname
+- A target that is neither a hostname nor a full URL starting with `https://`
+
+### Redirect returns 404
+
+All three must be true for a redirect to work:
+
+1. The hostname is in `redirects.txt`
+2. The hostname has a matching `[[routes]]` entry in `wrangler.toml`
+3. The custom domain is fully active in Cloudflare (check the Workers dashboard)
+
+If the custom domain was just added, wait a few minutes for the certificate to provision.
+
+### Redirect target is wrong
+
+Check which target mode the rule uses:
+
+- Hostname target: preserves the full original path and query string
+- Full URL target: locks the destination path, appends query string only
+
+If you used a full URL target and expected path preservation, change the target to a bare hostname.
+
+---
+
+## Production Example
+
+Router currently powers `inds.space`. A sample of active rules:
+
+```
+// Apex to www
+inds.space --> www.inds.space
+
+// Discord Links
+my.dc.inds.space --> my.discord.inds.space
+my.discord.inds.space --> https://discord.com/users/1176951696048541827
+```
+
+This covers both target modes in real use: hostname-to-hostname for the apex redirect and vanity alias, full URL for external service destinations. One Worker handles all of them from a single deploy.
+
+---
 
 ## License
 
