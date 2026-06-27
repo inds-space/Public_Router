@@ -1,6 +1,6 @@
 # Router
 
-Fast Cloudflare Worker redirects from one simple text file.
+Fast redirects from one simple text file.
 
 ### It works like this:
 1. Put your domains you want to redirect from in wrangler.toml 
