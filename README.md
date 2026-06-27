@@ -2,32 +2,13 @@
 
 Fast Cloudflare Worker redirects from one simple text file.
 
-Router keeps your redirect rules in `redirects.txt`, your domain bindings in `wrangler.toml`, and your routing logic in `router.js`. Change the file, deploy once, and ship clean redirects without dashboard drift.
-
-## Why it sells
-
-- One Worker for hostname redirects, exact paths, and wildcard paths
-- One plain-text config file for fast edits and easy review
-- One deploy command to push changes live
-- One code path that stays easy to audit
-
-## How it works
-
-1. `index.js` receives the request.
-2. `router.js` parses `redirects.txt`.
-3. `router.js` matches hostname and path rules.
-4. Matches return a `308` redirect.
-5. Misses return `404.html`.
-
-No shared cache, no database, no hidden control panel state.
-
-## Rule format
-
-```txt
-source.example.com --> target.example.com
-source.example.com/path --> target.example.com/path
-source.example.com/path/* --> target.example.com/base/*
+### It works like this:
+1. Put your domains you want to redirect from in wrangler.toml 
+2. Put all the redirects you want in redirects.txt like so:
+```text
+inds.space --> www.inds.space
 ```
+3. Deploy to Cloudflare Workers. That's it. It's really that simple.
 
 What you get:
 
